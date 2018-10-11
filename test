@@ -1,0 +1,99 @@
+import tensorflow as tf
+import AlexNet_Mulity
+import matplotlib.pyplot as plt
+from PIL import Image
+
+NUM_CLASS = 10
+BATCH_SIZE = 1
+TFRECORD_DIR = 'D:\pycharm\PyCharm Community Edition 2017.2.3\TensorFlow\CodeDemo\captcha\\test.tfrecords'
+
+
+x = tf.placeholder(tf.float32,[None,224,224])
+
+
+
+def read_and_decode(filename):
+
+    #读取tfrecords文件要使用队列方式读取
+    filename_queue = tf.train.string_input_producer([filename])
+    reader = tf.TFRecordReader()
+    _,serialized_example = reader.read(filename_queue)
+    features = tf.parse_single_example(
+        serialized_example,
+        features={
+            'image_data':tf.FixedLenFeature([],tf.string),
+            'label0':tf.FixedLenFeature([],tf.int64),
+            'label1':tf.FixedLenFeature([],tf.int64),
+            'label2':tf.FixedLenFeature([],tf.int64),
+            'label3':tf.FixedLenFeature([],tf.int64),
+        }
+    )
+
+    images = tf.decode_raw(features['image_data'],tf.uint8)
+    image_raw = tf.reshape(images,[224,224])
+    images = tf.reshape(images,[224,224])
+    images = tf.cast(images,tf.float32) / 255.0
+    images = tf.subtract(images,0.5)
+    images = tf.multiply(images,2.0)
+
+    label0 = tf.cast(features['label0'],tf.int32)
+    label1 = tf.cast(features['label1'], tf.int32)
+    label2 = tf.cast(features['label2'], tf.int32)
+    label3 = tf.cast(features['label3'], tf.int32)
+
+    return images,image_raw,label0,label1,label2,label3
+
+image,image_raw,label0,label1,label2,label3 = read_and_decode(TFRECORD_DIR)
+
+#读取一个batch大小的数据
+image_batch,image_raw_batch,label0_batch,label1_batch,label2_batch,label3_batch = tf.train.shuffle_batch([image,image_raw,label0,label1,label2,label3],
+                                                                                         batch_size=BATCH_SIZE,
+                                                                                         capacity=50000,
+                                                                                         min_after_dequeue=10000,
+                                                                                         num_threads=1)
+
+with tf.Session() as sess:
+
+    X = tf.reshape(x,[BATCH_SIZE,224,224,1])
+
+    #预测值
+    logit0,logit1,logit2,logit3 = AlexNet_Mulity.inference(X,'train',None)
+
+    #prediction0 = tf.reshape(logit0,[-1,NUM_CLASS])
+    prediction0 = tf.argmax(logit0,1)
+
+    #prediction1 = tf.reshape(logit1, [-1, NUM_CLASS])
+    prediction1 = tf.argmax(logit1, 1)
+
+    #prediction2 = tf.reshape(logit2, [-1, NUM_CLASS])
+    prediction2 = tf.argmax(logit2, 1)
+
+    #prediction3 = tf.reshape(logit3, [-1, NUM_CLASS])
+    prediction3 = tf.argmax(logit3, 1)
+
+    saver = tf.train.Saver()
+    saver.restore(sess,'model\model.ckpt-20')
+
+    #创建队列管理器
+    coor = tf.train.Coordinator()
+    threads = tf.train.start_queue_runners(sess=sess,coord=coor)
+
+    for i in range(10):
+
+        b_image,b_image_raw,b_label0,b_label1,b_label2,b_label3 = sess.run([image_batch,image_raw_batch,label0_batch,label1_batch,label2_batch,label3_batch])
+        p0,p1,p2,p3 = sess.run([prediction0,prediction1,prediction2,prediction3],feed_dict={x:b_image})
+
+
+        #将数组转化为图片
+        img = Image.fromarray(b_image_raw[0],'L')
+        plt.imshow(img)
+        plt.show()
+
+        print('label:',b_label0,b_label1,b_label2,b_label3)
+        print('prediction:',p0,p1,p2,p3)
+
+
+
+
+    coor.request_stop()
+    coor.join(threads)
